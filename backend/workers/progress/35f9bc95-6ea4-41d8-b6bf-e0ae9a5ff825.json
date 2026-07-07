@@ -1,0 +1,1 @@
+{"job_id": "35f9bc95-6ea4-41d8-b6bf-e0ae9a5ff825", "status": "ready", "chunks_done": 4185, "total_chunks": 4185, "error": null, "stats": {"python_files": 823, "total_chunks": 4185, "walk_time": 0.24, "parse_time": 18.09, "embed_time": 134.03, "store_time": 5.78, "total_time": 203.72}}

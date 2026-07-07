@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+supabase
+python-dotenv
+email-validator
+gitpython
+sentence-transformers
+chromadb
+email-validator
+gitpython
+sentence-transformers
+chromadb
