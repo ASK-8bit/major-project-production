@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from models.chat_models import (
     NewChatRequest, QueryRequest, QueryResponse,
-    ChatListResponse, MessageListResponse
+    ChatListResponse, MessageListResponse, UpdateTitleRequest
 )
 from services.chat_service import chat_service
 from core.dependencies import get_current_user
@@ -49,3 +49,13 @@ async def query(data: QueryRequest, user=Depends(get_current_user)):
         top_k=data.top_k,
         user_id=user.id,
     )
+
+
+@router.patch("/chat/{chat_id}/title")
+async def update_title(chat_id: str, data: UpdateTitleRequest, user=Depends(get_current_user)):
+    return await chat_service.update_chat_title(chat_id, user.id, data.title)
+
+
+@router.delete("/chat/{chat_id}")
+async def delete_chat(chat_id: str, user=Depends(get_current_user)):
+    return await chat_service.delete_chat(chat_id, user.id)

@@ -126,8 +126,9 @@ const ChatArea = ({
       const assistantMsg = {
         message_id: `ai-${Date.now()}`,
         role: 'assistant',
-        content: `I searched the vector database for relevant code structures matching your query. Here are the top retrieved matching snippets from the repository:`,
+        content: data.answer || `I searched the vector database for relevant code structures matching your query. Here are the top retrieved matching snippets from the repository:`,
         chunks: data.chunks || [],
+        citations: data.citations || [],
         created_at: new Date().toISOString()
       };
       setMessages(prev => [...prev, assistantMsg]);
@@ -293,6 +294,29 @@ const ChatArea = ({
                   <div className={`message-content-box${msg.isError ? ' error' : ''}`}>
                     {msg.content}
                   </div>
+
+                  {/* Citations (assistant only) */}
+                  {msg.role === 'assistant' && msg.citations && msg.citations.length > 0 && (
+                    <div className="chunks-results-container" style={{ width: '100%', marginTop: '10px' }}>
+                      <div className="chunks-headline">
+                        <FileCode size={13} />
+                        <span>Sources</span>
+                      </div>
+                      {msg.citations.map((citation, cIdx) => (
+                        <div key={`${index}-${cIdx}`} className="chunk-card fade-in" style={{ padding: '10px 12px' }}>
+                          <div className="chunk-header">
+                            <span className="chunk-file-path">{citation.file_path}</span>
+                            <span className="chunk-distance">{citation.qualified_name}</span>
+                          </div>
+                          {citation.start_line && citation.end_line && (
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                              Lines {citation.start_line}-{citation.end_line}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Code chunks (assistant only) */}
                   {msg.chunks && msg.chunks.length > 0 && (

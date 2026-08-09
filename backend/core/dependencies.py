@@ -16,6 +16,12 @@ async def get_current_user(authorization: str = Header(...)):
 
     token = authorization.split(" ")[1]
 
+    if not supabase:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service is not configured"
+        )
+
     try:
         response = supabase.auth.get_user(token)
         if not response or not response.user:

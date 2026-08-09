@@ -13,6 +13,7 @@ from models.chat_models import (
     MessageResponse, MessageListResponse
 )
 from services.upload_service import CHROMA_PATH, WORKER_DIR
+from services.answer_service import build_answer
 
 QUERY_WORKER = str(WORKER_DIR / "query_worker.py")
 QUERY_TIMEOUT_SECONDS = 60  # prevents subprocess hanging forever on a bad query
@@ -23,6 +24,9 @@ class ChatService:
     # ── Session ownership check (used before query + chat creation) ──
 
     def _verify_session_access(self, session_id: str, user_id: str) -> dict:
+        if not supabase:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Supabase is not configured")
+
         result = supabase.table("sessions") \
             .select("session_id, status") \
             .eq("session_id", session_id) \
@@ -83,6 +87,22 @@ class ChatService:
         messages = [MessageResponse(**row) for row in result.data]
         return MessageListResponse(messages=messages)
 
+    async def update_chat_title(self, chat_id: str, user_id: str, title: str) -> dict:
+        chat = supabase.table("chats").select("chat_id").eq("chat_id", chat_id).eq("user_id", user_id).execute()
+        if not chat.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
+
+        supabase.table("chats").update({"title": title}).eq("chat_id", chat_id).execute()
+        return {"message": "Title updated"}
+
+    async def delete_chat(self, chat_id: str, user_id: str) -> dict:
+        chat = supabase.table("chats").select("chat_id").eq("chat_id", chat_id).eq("user_id", user_id).execute()
+        if not chat.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
+
+        supabase.table("chats").delete().eq("chat_id", chat_id).execute()
+        return {"message": "Chat deleted"}
+
     # ── Query (chunks only — LLM integration comes next) ──
 
     async def run_query(self, session_id: str, chat_id: str, prompt: str, top_k: int, user_id: str) -> QueryResponse:
@@ -142,11 +162,27 @@ class ChatService:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=result["error"])
 
         chunks = [ChunkResult(**c) for c in result["chunks"]]
+        answer_payload = build_answer(prompt, [c.model_dump() for c in chunks])
 
-        # NOTE: assistant message is NOT saved yet — that happens once
-        # LLM integration is added next. For now only chunks are returned.
+        assistant_content = json.dumps({
+            "text": answer_payload["answer"],
+            "chunks": [c.model_dump() for c in chunks],
+            "citations": answer_payload["citations"],
+        })
 
-        return QueryResponse(chat_id=chat_id, chunks=chunks)
+        supabase.table("messages").insert({
+            "message_id": str(uuid.uuid4()),
+            "chat_id": chat_id,
+            "role": "assistant",
+            "content": assistant_content,
+        }).execute()
+
+        return QueryResponse(
+            chat_id=chat_id,
+            chunks=chunks,
+            answer=answer_payload["answer"],
+            citations=answer_payload["citations"],
+        )
 
 
 chat_service = ChatService()

@@ -16,6 +16,10 @@ class QueryRequest(BaseModel):
     top_k: Optional[int] = 5
 
 
+class UpdateTitleRequest(BaseModel):
+    title: str
+
+
 # ── Response Models ─────────────────────────────────────────────
 
 class ChunkResult(BaseModel):
@@ -27,6 +31,8 @@ class ChunkResult(BaseModel):
 class QueryResponse(BaseModel):
     chat_id: str
     chunks: List[ChunkResult]
+    answer: Optional[str] = None
+    citations: Optional[List[dict]] = None
 
 
 class ChatResponse(BaseModel):
