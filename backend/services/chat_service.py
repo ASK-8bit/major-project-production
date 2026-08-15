@@ -108,10 +108,7 @@ class ChatService:
             "content": prompt,
         }).execute()
 
-        # Run query_worker.py as isolated subprocess (same reason as embedding_worker)
-        result_path = str(Path(tempfile.gettempdir()) / f"query_result_{uuid.uuid4()}.json")
-
-       # ── NEW: talk to the persistent worker ──
+       # 2. Retrieve chunks from persistent query worker
         try:
             result = query_worker.query(
                 prompt=prompt,
@@ -133,6 +130,27 @@ class ChatService:
 
         chunks = [ChunkResult(**c) for c in result["chunks"]]
 
-        return QueryResponse(chat_id=chat_id, chunks=chunks)
+        # 3. Call Gemini (with 1 retry built-in)
+        from services.llm_service import generate_answer
 
+        answer = generate_answer(
+            question=prompt,
+            chunks=[c.model_dump() for c in chunks],
+        )
+
+        # 4. Save assistant message
+        supabase.table("messages").insert({
+            "message_id": str(uuid.uuid4()),
+            "chat_id": chat_id,
+            "role": "assistant",
+            "content": answer,
+        }).execute()
+
+        # 5. Return both answer + chunks
+        return QueryResponse(
+            chat_id=chat_id,
+            answer=answer,
+            chunks=chunks,
+        )
+    
 chat_service = ChatService()

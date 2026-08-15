@@ -26,6 +26,7 @@ class ChunkResult(BaseModel):
 
 class QueryResponse(BaseModel):
     chat_id: str
+    answer: str
     chunks: List[ChunkResult]
 
 
