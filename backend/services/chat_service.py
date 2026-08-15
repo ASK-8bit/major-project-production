@@ -14,6 +14,8 @@ from models.chat_models import (
 )
 from services.upload_service import CHROMA_PATH, WORKER_DIR
 
+from workers.query_worker_manager import query_worker
+
 QUERY_WORKER = str(WORKER_DIR / "query_worker.py")
 QUERY_TIMEOUT_SECONDS = 60  # prevents subprocess hanging forever on a bad query
 
@@ -109,44 +111,28 @@ class ChatService:
         # Run query_worker.py as isolated subprocess (same reason as embedding_worker)
         result_path = str(Path(tempfile.gettempdir()) / f"query_result_{uuid.uuid4()}.json")
 
+       # ── NEW: talk to the persistent worker ──
         try:
-            subprocess.run(
-                [
-                    sys.executable,
-                    QUERY_WORKER,
-                    prompt,
-                    session_id,
-                    CHROMA_PATH,
-                    result_path,
-                    str(top_k),
-                ],
+            result = query_worker.query(
+                prompt=prompt,
+                session_id=session_id,
+                top_k=top_k,
                 timeout=QUERY_TIMEOUT_SECONDS,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
             )
-        except subprocess.TimeoutExpired:
+        except TimeoutError:
             raise HTTPException(
                 status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail="Query timed out. Try again."
+                detail="Query timed out. Try again.",
             )
 
-        try:
-            with open(result_path, "r") as f:
-                result = json.load(f)
-        except Exception:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Query worker produced no result")
-        finally:
-            Path(result_path).unlink(missing_ok=True)
-
         if result["status"] == "error":
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=result["error"])
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=result["error"],
+            )
 
         chunks = [ChunkResult(**c) for c in result["chunks"]]
 
-        # NOTE: assistant message is NOT saved yet — that happens once
-        # LLM integration is added next. For now only chunks are returned.
-
         return QueryResponse(chat_id=chat_id, chunks=chunks)
-
 
 chat_service = ChatService()

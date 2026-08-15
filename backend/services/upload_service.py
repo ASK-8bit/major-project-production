@@ -9,12 +9,12 @@ from fastapi import HTTPException, status
 
 from core.config import supabase
 from models.upload_models import UploadResponse, StatusResponse, SessionResponse, SessionListResponse
+from workers.embedding_worker_manager import embedding_worker
 
 CHROMA_PATH = os.getenv("CHROMA_PATH", "./chromadb")
 
 # Absolute path to embedding_worker.py — works regardless of where uvicorn is run from
 WORKER_DIR = Path(__file__).parent.parent / "workers"
-EMBEDDING_WORKER = str(WORKER_DIR / "embedding_worker.py")
 PROGRESS_DIR = WORKER_DIR / "progress"
 PROGRESS_DIR.mkdir(parents=True, exist_ok=True)
 LOG_DIR = str(WORKER_DIR / "logs")
@@ -87,19 +87,12 @@ class UploadService:
 
         # Launch embedding_worker.py as a completely separate process
         # This avoids the supabase + sentence_transformers import deadlock on Windows
-        subprocess.Popen(
-            [
-                sys.executable,
-                EMBEDDING_WORKER,
-                repo_url,
-                session_id,
-                job_id,
-                CHROMA_PATH,
-                progress_path,
-                LOG_DIR,
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+        embedding_worker.submit_job(
+            repo_url=repo_url,
+            session_id=session_id,
+            job_id=job_id,
+            progress_path=progress_path,
+            log_dir=LOG_DIR,
         )
 
         return UploadResponse(
