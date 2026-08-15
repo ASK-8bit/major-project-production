@@ -27,6 +27,8 @@ def run(prompt: str, session_id: str, chroma_path: str, result_path: str, top_k:
     try:
         from sentence_transformers import SentenceTransformer
         import chromadb
+        from dotenv import load_dotenv
+        load_dotenv()   # Load .env variables
 
         # Embed the prompt
         model = SentenceTransformer("all-MiniLM-L6-v2")
@@ -36,8 +38,18 @@ def run(prompt: str, session_id: str, chroma_path: str, result_path: str, top_k:
             normalize_embeddings=True,
         ).tolist()[0]
 
-        # Query ChromaDB collection for this session
-        client = chromadb.PersistentClient(path=chroma_path)
+        # ---------- CHANGE HERE ----------
+        # Old local code:
+        # client = chromadb.PersistentClient(path=chroma_path)
+        
+        # New Cloud code:
+        client = chromadb.CloudClient(
+            api_key=os.getenv("CHROMA_API_KEY"),
+            tenant=os.getenv("CHROMA_TENANT"),
+            database=os.getenv("CHROMA_DATABASE"),
+        )   # reads CHROMA_API_KEY, CHROMA_TENANT, CHROMA_DATABASE from .env
+        # --------------------------------
+
         collection = client.get_collection(name=session_id)
 
         results = collection.query(

@@ -181,6 +181,8 @@ def batch_iterator(items, batch_size):
 def embed_and_store(documents, session_id, job_id, chroma_path, progress_path, logger):
     from sentence_transformers import SentenceTransformer
     import chromadb
+    from dotenv import load_dotenv
+    load_dotenv()
 
     texts = [doc.text for doc in documents]
     metadatas = [doc.metadata for doc in documents]
@@ -188,6 +190,7 @@ def embed_and_store(documents, session_id, job_id, chroma_path, progress_path, l
 
     logger.info(f"Loading embedding model...")
     write_progress(progress_path, job_id, "embedding", 0, total)
+
     model = SentenceTransformer("all-MiniLM-L6-v2")
     logger.info("Model loaded. Starting encoding...")
 
@@ -203,19 +206,28 @@ def embed_and_store(documents, session_id, job_id, chroma_path, progress_path, l
     logger.info(f"Embedding done in {embed_time}s")
 
     write_progress(progress_path, job_id, "storing", 0, total)
-    logger.info("Storing in ChromaDB...")
+    logger.info("Storing in Chroma Cloud...")
 
-    client = chromadb.PersistentClient(path=chroma_path)
+    # ---------- CLOUD CLIENT ----------
+    client = chromadb.CloudClient(
+        api_key=os.getenv("CHROMA_API_KEY"),
+        tenant=os.getenv("CHROMA_TENANT"),
+        database=os.getenv("CHROMA_DATABASE"),
+    )
+    # ----------------------------------
+
     try:
         client.delete_collection(session_id)
     except Exception:
         pass
+
     collection = client.create_collection(name=session_id)
 
     store_start = time.perf_counter()
     for i, batch_texts in enumerate(batch_iterator(texts, CHROMA_BATCH_SIZE)):
         start = i * CHROMA_BATCH_SIZE
         end = start + len(batch_texts)
+
         collection.add(
             ids=[str(uuid.uuid4()) for _ in batch_texts],
             documents=batch_texts,
@@ -228,7 +240,6 @@ def embed_and_store(documents, session_id, job_id, chroma_path, progress_path, l
     logger.info(f"Storage done in {store_time}s")
 
     return embed_time, store_time
-
 
 # ============================================================
 # Git Clone

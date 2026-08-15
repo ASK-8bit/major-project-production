@@ -177,13 +177,21 @@ class UploadService:
         if not result.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
-        # Delete ChromaDB collection
+        # Delete Chroma Cloud collection
         try:
             import chromadb
-            client = chromadb.PersistentClient(path=CHROMA_PATH)
+            import os
+            from dotenv import load_dotenv
+            load_dotenv()
+
+            client = chromadb.CloudClient(
+                api_key=os.getenv("CHROMA_API_KEY"),
+                tenant=os.getenv("CHROMA_TENANT"),
+                database=os.getenv("CHROMA_DATABASE"),
+            )
             client.delete_collection(session_id)
         except Exception:
-            pass
+            pass  # Don't fail the whole delete if collection doesn't exist
 
         # Delete from Supabase (jobs cascade via FK)
         supabase.table("sessions").delete().eq("session_id", session_id).execute()
