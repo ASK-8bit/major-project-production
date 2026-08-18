@@ -10,3 +10,4 @@ email-validator
 gitpython
 sentence-transformers
 chromadb
+google.generativeai
