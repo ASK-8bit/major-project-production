@@ -69,6 +69,35 @@ def main():
                     "distance": results["distances"][0][i],
                 })
 
+            dependency_names = []
+            for chunk in chunks:
+                deps = chunk.get("metadata", {}).get("dependencies", "") or ""
+                if isinstance(deps, str):
+                    items = [d.strip() for d in deps.split(",") if d.strip()]
+                else:
+                    items = [str(d).strip() for d in deps if str(d).strip()]
+                for dep in items:
+                    if dep and dep not in dependency_names:
+                        dependency_names.append(dep)
+
+            if dependency_names:
+                dependency_results = collection.get(
+                    where={"qualified_name": {"$in": dependency_names}},
+                    include=["documents", "metadatas"],
+                )
+                for i in range(len(dependency_results.get("documents", []))):
+                    meta = dependency_results["metadatas"][i]
+                    qualified_name = meta.get("qualified_name")
+                    if not qualified_name:
+                        continue
+                    if any(existing.get("metadata", {}).get("qualified_name") == qualified_name for existing in chunks):
+                        continue
+                    chunks.append({
+                        "text": dependency_results["documents"][i],
+                        "metadata": meta,
+                        "distance": 0.0,
+                    })
+
             response = {
                 "request_id": request_id,
                 "status": "ok",

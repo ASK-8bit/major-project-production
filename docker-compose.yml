@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   backend:
     build:
@@ -8,19 +6,17 @@ services:
     container_name: rag_backend
     ports:
       - "8000:8000"
-    environment:
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_KEY=${SUPABASE_KEY}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL}
-      - EMBED_BATCH_SIZE=${EMBED_BATCH_SIZE}
-      - CHROMA_BATCH_SIZE=${CHROMA_BATCH_SIZE}
-      - CHROMA_API_KEY=${CHROMA_API_KEY}
-      - CHROMA_TENANT=${CHROMA_TENANT}
-      - CHROMA_DATABASE=${CHROMA_DATABASE}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    env_file:
+      - ./backend/.env
     volumes:
       - ./backend/workers/logs:/app/workers/logs
       - ./backend/workers/progress:/app/workers/progress
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     restart: unless-stopped
 
   frontend:
@@ -33,5 +29,6 @@ services:
     ports:
       - "5173:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     restart: unless-stopped

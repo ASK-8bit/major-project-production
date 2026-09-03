@@ -101,6 +101,25 @@ def build_qualified_name(class_stack, function_name):
     return function_name
 
 
+def extract_function_calls(node: ast.AST) -> set[str]:
+    names: set[str] = set()
+    for child in ast.walk(node):
+        if not isinstance(child, ast.Call):
+            continue
+
+        func = child.func
+        if isinstance(func, ast.Name):
+            names.add(func.id)
+            names.add(func.id.lower())
+        elif isinstance(func, ast.Attribute):
+            names.add(func.attr)
+            names.add(func.attr.lower())
+            if isinstance(func.value, ast.Name):
+                names.add(f"{func.value.id}.{func.attr}")
+                names.add(f"{func.value.id.lower()}.{func.attr.lower()}")
+    return names
+
+
 def parse_python_file(file_path: Path) -> List[Document]:
     documents = []
     source = read_file(file_path)
@@ -143,10 +162,57 @@ def parse_python_file(file_path: Path) -> List[Document]:
             "start_line": start,
             "end_line": end,
             "is_method": len(class_stack) > 0,
+            "dependencies": [],
         }
         documents.append(Document(text=code, metadata=metadata))
 
     StackVisitor().visit(tree)
+
+    if not documents:
+        return documents
+
+    definitions = {
+        doc.metadata["function_name"].lower(): doc.metadata["qualified_name"]
+        for doc in documents
+    }
+    qualified_names = {doc.metadata["qualified_name"] for doc in documents}
+
+    for doc in documents:
+        try:
+            func_tree = ast.parse(doc.text)
+        except SyntaxError:
+            continue
+
+        dependency_names = set()
+        for child in ast.walk(func_tree):
+            if not isinstance(child, ast.Call):
+                continue
+            func = child.func
+            symbol_names = set()
+
+            if isinstance(func, ast.Name):
+                symbol_names.add(func.id)
+            elif isinstance(func, ast.Attribute):
+                symbol_names.add(func.attr)
+                if isinstance(func.value, ast.Name):
+                    symbol_names.add(f"{func.value.id}.{func.attr}")
+
+            for symbol in symbol_names:
+                normalized = symbol.lower()
+                if normalized in definitions:
+                    dependency_names.add(definitions[normalized])
+                elif "." in symbol:
+                    target = symbol.rsplit(".", 1)[-1]
+                    if target.lower() in definitions:
+                        dependency_names.add(definitions[target.lower()])
+                elif symbol.lower() in {name.lower().split(".")[-1] for name in qualified_names}:
+                    for qualified in qualified_names:
+                        if qualified.lower().endswith(f".{symbol.lower()}") or qualified.lower().split(".")[-1] == symbol.lower():
+                            if qualified != doc.metadata["qualified_name"]:
+                                dependency_names.add(qualified)
+
+        doc.metadata["dependencies"] = ", ".join(sorted(dependency_names))
+
     return documents
 
 
