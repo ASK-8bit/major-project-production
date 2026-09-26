@@ -2,13 +2,13 @@ import os
 import time
 import google.generativeai as genai
 from dotenv import load_dotenv
-
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 load_dotenv()
 
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# gemini-2.0-flash as requested
-model = genai.GenerativeModel("gemini-3.7-flash")
+model = genai.GenerativeModel("gemini-flash-lite-latest")
+print("Gemini API key = ", os.getenv("GEMINI_API_KEY"))
 
 
 def _build_prompt(question: str, chunks: list[dict]) -> str:
@@ -25,34 +25,73 @@ def _build_prompt(question: str, chunks: list[dict]) -> str:
 
     context = "\n\n".join(context_parts) if context_parts else "No relevant code chunks found."
 
-    return f"""You are a helpful assistant that answers questions about a legacy Python codebase.
-Use the following retrieved code chunks as your main context.
-If the answer cannot be found in the chunks, say so clearly.
+    return f"""You are an expert Python code analyst helping developers understand a legacy codebase.
 
-Context:
+Your job is to answer the user's question using ONLY the retrieved code chunks provided below. 
+Do not use any external knowledge or invent code that is not present in the context.
+
+### Guidelines:
+- Base every claim strictly on the given code chunks.
+- If the answer cannot be fully determined from the chunks, clearly say what is missing.
+- Prefer clear, structured, developer-friendly explanations over vague summaries.
+- When relevant, explain:
+  • How the feature / logic is implemented
+  • Which files, functions, and classes are involved
+  • Key dependencies and call relationships
+  • Potential impact of modifying the related code
+
+### Retrieved Code Chunks:
 {context}
 
-Question: {question}
+### User Question:
+{question}
 
-Answer:"""
+### Answer:
+Provide a clear and precise explanation grounded in the code above."""
 
 
 def generate_answer(question: str, chunks: list[dict], max_retries: int = 1) -> str:
-    """
-    Calls Gemini. Retries once on failure.
-    Returns the answer text, or an error message if both attempts fail.
-    """
     prompt = _build_prompt(question, chunks)
 
+    generation_config = {
+        "temperature": 0.2,          # Lower = more focused & less vague
+        "top_p": 0.95,
+        "top_k": 40,
+        "max_output_tokens": 4096,   # Important! Prevents truncation
+    }
+
+    safety_settings = {
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+    }
+
     last_error = None
-    for attempt in range(max_retries + 1):
+    for attempt in range(max_retries + 0):
         try:
-            response = model.generate_content(prompt)
+            response = model.generate_content(
+                prompt,
+                generation_config=generation_config,
+                safety_settings=safety_settings,
+            )
+
+            # Better way to extract text + detect problems
+            if not response.candidates:
+                return "[Gemini error] No candidates returned (possibly blocked)"
+
+            candidate = response.candidates[0]
+            finish_reason = candidate.finish_reason.name if candidate.finish_reason else "UNKNOWN"
+
+            if finish_reason not in ("STOP", "MAX_TOKENS"):
+                return f"[Gemini warning] Finish reason: {finish_reason}"
+
             return response.text.strip()
+
         except Exception as e:
             last_error = str(e)
             if attempt < max_retries:
-                time.sleep(1.5)  # short backoff before retry
+                time.sleep(1.5)
             continue
 
     return f"[Gemini error after {max_retries + 1} attempts] {last_error}"

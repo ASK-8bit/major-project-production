@@ -13,7 +13,7 @@ from models.chat_models import (
     MessageResponse, MessageListResponse
 )
 from services.upload_service import CHROMA_PATH, WORKER_DIR
-from services.answer_service import build_answer
+from services.llm_service import generate_answer
 
 from workers.query_worker_manager import query_worker
 
@@ -149,12 +149,15 @@ class ChatService:
             )
 
         chunks = [ChunkResult(**c) for c in result["chunks"]]
-        answer_payload = build_answer(prompt, [c.model_dump() for c in chunks])
+        chunks_data = [c.model_dump() for c in chunks]
+
+        # Call the real Gemini LLM
+        answer_text = generate_answer(question=prompt, chunks=chunks_data)
 
         assistant_content = json.dumps({
-            "text": answer_payload["answer"],
-            "chunks": [c.model_dump() for c in chunks],
-            "citations": answer_payload.get("citations", []),
+            "text": answer_text,
+            "chunks": chunks_data,
+            "citations": [],          # we can add proper citations later
         })
 
         supabase.table("messages").insert({
@@ -165,10 +168,10 @@ class ChatService:
         }).execute()
 
         return QueryResponse(
-            chat_id=chat_id,
-            chunks=chunks,
-            answer=answer_payload["answer"],
-            citations=answer_payload.get("citations", []),
-        )
+                chat_id=chat_id,
+                chunks=chunks,
+                answer=answer_text,
+                citations=[],
+            )
     
 chat_service = ChatService()
