@@ -1,6 +1,7 @@
 from supabase import create_client, Client
 from dotenv import load_dotenv
 import os
+<<<<<<< HEAD
 from pathlib import Path
 
 # Load .env from backend directory if present, or cwd
@@ -9,6 +10,10 @@ if env_path.exists():
     load_dotenv(dotenv_path=env_path)
 else:
     load_dotenv()
+=======
+
+load_dotenv()
+>>>>>>> 69c33f55ef38b287610ab76ea827993be9df31a5
 
 SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")

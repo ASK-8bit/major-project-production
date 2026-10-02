@@ -1,20 +1,29 @@
+<<<<<<< HEAD
 import logging
+=======
+>>>>>>> 69c33f55ef38b287610ab76ea827993be9df31a5
 from fastapi import HTTPException, status
 from core.config import supabase
 from models.auth_models import SignUpRequest, LoginRequest, RefreshRequest, AuthResponse, TokenResponse, UserResponse
 
+<<<<<<< HEAD
 logger = logging.getLogger(__name__)
 
+=======
+>>>>>>> 69c33f55ef38b287610ab76ea827993be9df31a5
 
 class AuthService:
 
     async def signup(self, data: SignUpRequest) -> AuthResponse:
+<<<<<<< HEAD
         if not supabase:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Supabase is not configured. Please create backend/.env with SUPABASE_URL and SUPABASE_KEY."
             )
 
+=======
+>>>>>>> 69c33f55ef38b287610ab76ea827993be9df31a5
         try:
             # Create user in Supabase auth.users
             response = supabase.auth.sign_up({
@@ -31,6 +40,7 @@ class AuthService:
             user_id = response.user.id
 
             # Create profile in public.profiles table
+<<<<<<< HEAD
             try:
                 supabase.table("profiles").insert({
                     "user_id": user_id,
@@ -45,6 +55,13 @@ class AuthService:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Account registered, but email confirmation is enabled in your Supabase project. Please confirm your email or disable 'Confirm email' in Supabase Auth settings."
                 )
+=======
+            supabase.table("profiles").insert({
+                "user_id": user_id,
+                "email": data.email,
+                "full_name": data.full_name,
+            }).execute()
+>>>>>>> 69c33f55ef38b287610ab76ea827993be9df31a5
 
             return AuthResponse(
                 user=UserResponse(
@@ -61,13 +78,17 @@ class AuthService:
         except HTTPException:
             raise
         except Exception as e:
+<<<<<<< HEAD
             logger.error(f"Signup error: {e}")
+=======
+>>>>>>> 69c33f55ef38b287610ab76ea827993be9df31a5
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Signup error: {str(e)}"
             )
 
     async def login(self, data: LoginRequest) -> AuthResponse:
+<<<<<<< HEAD
         if not supabase:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -100,11 +121,21 @@ class AuthService:
                     )
 
             if not response.user or not response.session:
+=======
+        try:
+            response = supabase.auth.sign_in_with_password({
+                "email": data.email,
+                "password": data.password,
+            })
+
+            if not response.user:
+>>>>>>> 69c33f55ef38b287610ab76ea827993be9df31a5
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid email or password"
                 )
 
+<<<<<<< HEAD
             # Fetch profile safely without throwing if profile row is missing
             full_name = ""
             try:
@@ -116,6 +147,16 @@ class AuthService:
                     full_name = profile.data[0].get("full_name", "")
             except Exception as pe:
                 logger.warning(f"Could not load profile for user {response.user.id}: {pe}")
+=======
+            # Fetch profile from public.profiles
+            profile = supabase.table("profiles")\
+                .select("full_name")\
+                .eq("user_id", response.user.id)\
+                .single()\
+                .execute()
+
+            full_name = profile.data["full_name"] if profile.data else ""
+>>>>>>> 69c33f55ef38b287610ab76ea827993be9df31a5
 
             return AuthResponse(
                 user=UserResponse(
@@ -132,6 +173,7 @@ class AuthService:
         except HTTPException:
             raise
         except Exception as e:
+<<<<<<< HEAD
             logger.error(f"Unexpected login error: {e}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -145,6 +187,14 @@ class AuthService:
                 detail="Supabase is not configured."
             )
 
+=======
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Login failed. Check your credentials."
+            )
+
+    async def refresh(self, data: RefreshRequest) -> TokenResponse:
+>>>>>>> 69c33f55ef38b287610ab76ea827993be9df31a5
         try:
             response = supabase.auth.refresh_session(data.refresh_token)
 
@@ -168,9 +218,12 @@ class AuthService:
             )
 
     async def logout(self) -> dict:
+<<<<<<< HEAD
         if not supabase:
             return {"message": "Logged out successfully"}
 
+=======
+>>>>>>> 69c33f55ef38b287610ab76ea827993be9df31a5
         try:
             supabase.auth.sign_out()
             return {"message": "Logged out successfully"}

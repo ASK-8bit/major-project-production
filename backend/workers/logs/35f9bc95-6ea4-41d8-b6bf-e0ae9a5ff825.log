@@ -1,0 +1,24 @@
+[2026-07-07 12:10:22] INFO — ============================================================
+[2026-07-07 12:10:22] INFO — Job started | job_id=35f9bc95-6ea4-41d8-b6bf-e0ae9a5ff825 | repo=https://github.com/django-oscar/django-oscar.git
+[2026-07-07 12:10:22] INFO — ============================================================
+[2026-07-07 12:10:22] INFO — Cloning https://github.com/django-oscar/django-oscar.git...
+[2026-07-07 12:10:33] INFO — Clone complete.
+[2026-07-07 12:10:33] INFO — Walking Python files...
+[2026-07-07 12:10:33] INFO — Found 823 Python files in 0.24s
+[2026-07-07 12:10:33] INFO — Parsing files...
+[2026-07-07 12:10:51] INFO — Parsed 4185 chunks in 18.09s
+[2026-07-07 12:11:21] INFO — Loading embedding model...
+[2026-07-07 12:11:25] INFO — Model loaded. Starting encoding...
+[2026-07-07 12:13:39] INFO — Embedding done in 134.03s
+[2026-07-07 12:13:39] INFO — Storing in ChromaDB...
+[2026-07-07 12:13:45] INFO — Storage done in 5.78s
+[2026-07-07 12:13:45] INFO — ============================================================
+[2026-07-07 12:13:45] INFO — COMPLETE
+[2026-07-07 12:13:45] INFO — Python Files  : 823
+[2026-07-07 12:13:45] INFO — Chunks Indexed: 4185
+[2026-07-07 12:13:45] INFO — Walk Time     : 0.24s
+[2026-07-07 12:13:45] INFO — Parse Time    : 18.09s
+[2026-07-07 12:13:45] INFO — Embed Time    : 134.03s
+[2026-07-07 12:13:45] INFO — Store Time    : 5.78s
+[2026-07-07 12:13:45] INFO — Total Time    : 203.72s
+[2026-07-07 12:13:45] INFO — ============================================================
