@@ -1,5 +1,4 @@
 import os
-<<<<<<< HEAD
 import re
 import time
 from pathlib import Path
@@ -12,18 +11,10 @@ if env_path.exists():
     load_dotenv(dotenv_path=env_path)
 else:
     load_dotenv()
-=======
-import time
-import google.generativeai as genai
-from dotenv import load_dotenv
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
-load_dotenv()
->>>>>>> 69c33f55ef38b287610ab76ea827993be9df31a5
 
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 model = genai.GenerativeModel("gemini-flash-lite-latest")
-<<<<<<< HEAD
 
 
 def _clean_formatting(text: str) -> str:
@@ -34,22 +25,19 @@ def _clean_formatting(text: str) -> str:
     if not text:
         return text
 
-    # 1. Remove heading hashes at the start of lines (e.g. '### 1. Title' -> '1. Title')
+    # 1. Remove heading hashes at the start of lines
     text = re.sub(r'^[ \t]*#{1,6}[ \t]*', '', text, flags=re.MULTILINE)
 
-    # 2. Convert asterisk list bullets to hyphens (e.g. '* Item' -> '- Item')
+    # 2. Convert asterisk list bullets to hyphens
     text = re.sub(r'^[ \t]*\*[ \t]+', '- ', text, flags=re.MULTILINE)
 
-    # 3. Strip bold and italic markdown asterisks (e.g. '**text**' -> 'text', '*text*' -> 'text')
+    # 3. Strip bold and italic markdown asterisks
     text = re.sub(r'\*{1,3}(.*?)\*{1,3}', r'\1', text)
 
     # 4. Remove any remaining stray asterisks or hashes
     text = text.replace('*', '').replace('#', '')
 
     return text.strip()
-=======
-print("Gemini API key = ", os.getenv("GEMINI_API_KEY"))
->>>>>>> 69c33f55ef38b287610ab76ea827993be9df31a5
 
 
 def _build_prompt(question: str, chunks: list[dict]) -> str:
@@ -71,16 +59,11 @@ def _build_prompt(question: str, chunks: list[dict]) -> str:
 Your job is to answer the user's question using ONLY the retrieved code chunks provided below. 
 Do not use any external knowledge or invent code that is not present in the context.
 
-<<<<<<< HEAD
 Guidelines:
-=======
-### Guidelines:
->>>>>>> 69c33f55ef38b287610ab76ea827993be9df31a5
 - Base every claim strictly on the given code chunks.
 - If the answer cannot be fully determined from the chunks, clearly say what is missing.
 - Prefer clear, structured, developer-friendly explanations over vague summaries.
 - When relevant, explain:
-<<<<<<< HEAD
   - How the feature / logic is implemented
   - Which files, functions, and classes are involved
   - Key dependencies and call relationships
@@ -101,31 +84,16 @@ User Question:
 
 Answer:
 Provide a clear and precise explanation grounded in the code above following all formatting rules strictly."""
-=======
-  • How the feature / logic is implemented
-  • Which files, functions, and classes are involved
-  • Key dependencies and call relationships
-  • Potential impact of modifying the related code
-
-### Retrieved Code Chunks:
-{context}
-
-### User Question:
-{question}
-
-### Answer:
-Provide a clear and precise explanation grounded in the code above."""
->>>>>>> 69c33f55ef38b287610ab76ea827993be9df31a5
 
 
 def generate_answer(question: str, chunks: list[dict], max_retries: int = 1) -> str:
     prompt = _build_prompt(question, chunks)
 
     generation_config = {
-        "temperature": 0.2,          # Lower = more focused & less vague
+        "temperature": 0.2,
         "top_p": 0.95,
         "top_k": 40,
-        "max_output_tokens": 4096,   # Important! Prevents truncation
+        "max_output_tokens": 4096,
     }
 
     safety_settings = {
@@ -136,7 +104,7 @@ def generate_answer(question: str, chunks: list[dict], max_retries: int = 1) -> 
     }
 
     last_error = None
-    for attempt in range(max_retries + 0):
+    for attempt in range(max_retries + 1):
         try:
             response = model.generate_content(
                 prompt,
@@ -144,7 +112,6 @@ def generate_answer(question: str, chunks: list[dict], max_retries: int = 1) -> 
                 safety_settings=safety_settings,
             )
 
-            # Better way to extract text + detect problems
             if not response.candidates:
                 return "[Gemini error] No candidates returned (possibly blocked)"
 
@@ -154,12 +121,8 @@ def generate_answer(question: str, chunks: list[dict], max_retries: int = 1) -> 
             if finish_reason not in ("STOP", "MAX_TOKENS"):
                 return f"[Gemini warning] Finish reason: {finish_reason}"
 
-<<<<<<< HEAD
             clean_text = _clean_formatting(response.text)
             return clean_text
-=======
-            return response.text.strip()
->>>>>>> 69c33f55ef38b287610ab76ea827993be9df31a5
 
         except Exception as e:
             last_error = str(e)
