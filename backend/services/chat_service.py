@@ -16,6 +16,8 @@ from services.upload_service import CHROMA_PATH, WORKER_DIR
 from services.llm_service import generate_answer
 
 from workers.query_worker_manager import query_worker
+from services.query_classifier import classify_query
+from services.analytical_pipeline import run_analytical_pipeline
 
 QUERY_WORKER = str(WORKER_DIR / "query_worker.py")
 QUERY_TIMEOUT_SECONDS = 60  # prevents subprocess hanging forever on a bad query
@@ -128,36 +130,53 @@ class ChatService:
             "content": prompt,
         }).execute()
 
-       # 2. Retrieve chunks from persistent query worker
-        try:
-            result = query_worker.query(
+       # ── NEW: Classify query first ──────────────────────────────────
+        classifier_result = classify_query(prompt)
+
+        if classifier_result.is_analytical:
+            # ── ANALYTICAL PIPELINE ────────────────────────────────────
+            print(f"[ChatService] Routing to analytical pipeline")
+            analytical_result = await run_analytical_pipeline(
                 prompt=prompt,
                 session_id=session_id,
-                top_k=top_k,
-                timeout=QUERY_TIMEOUT_SECONDS,
+                classifier_result=classifier_result
             )
-        except TimeoutError:
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail="Query timed out. Try again.",
-            )
+            answer_text = analytical_result["answer"]
+            chunks_data = []
+            chunks = []
 
-        if result["status"] == "error":
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=result["error"],
-            )
+        else:
+            # ── EXISTING RETRIEVAL PIPELINE (unchanged) ────────────────
+            print(f"[ChatService] Routing to retrieval pipeline")
+            try:
+                result = query_worker.query(
+                    prompt=prompt,
+                    session_id=session_id,
+                    top_k=top_k,
+                    timeout=QUERY_TIMEOUT_SECONDS,
+                )
+            except TimeoutError:
+                raise HTTPException(
+                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                    detail="Query timed out. Try again.",
+                )
 
-        chunks = [ChunkResult(**c) for c in result["chunks"]]
-        chunks_data = [c.model_dump() for c in chunks]
+            if result["status"] == "error":
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=result["error"],
+                )
 
-        # Call the real Gemini LLM
-        answer_text = generate_answer(question=prompt, chunks=chunks_data)
+            chunks = [ChunkResult(**c) for c in result["chunks"]]
+            chunks_data = [c.model_dump() for c in chunks]
+            answer_text = generate_answer(question=prompt, chunks=chunks_data)
 
+        # ── SAVE ASSISTANT MESSAGE (shared by both paths) ──────────────
         assistant_content = json.dumps({
             "text": answer_text,
             "chunks": chunks_data,
-            "citations": [],          # we can add proper citations later
+            "citations": [],
+            "source": "analytical" if classifier_result.is_analytical else "retrieval"
         })
 
         supabase.table("messages").insert({
@@ -168,10 +187,11 @@ class ChatService:
         }).execute()
 
         return QueryResponse(
-                chat_id=chat_id,
-                chunks=chunks,
-                answer=answer_text,
-                citations=[],
-            )
-    
+            chat_id=chat_id,
+            chunks=chunks,
+            answer=answer_text,
+            citations=[],
+            source="analytical" if classifier_result.is_analytical else "retrieval"
+        )
+
 chat_service = ChatService()
