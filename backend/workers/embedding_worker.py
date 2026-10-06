@@ -132,6 +132,21 @@ def parse_python_file(file_path: Path) -> List[Document]:
     lines = source.splitlines()
     module_name = file_path.stem
 
+    # Collect imports
+    imports = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imports.append(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            for alias in node.names:
+                if module:
+                    imports.append(f"{module}.{alias.name}")
+                else:
+                    imports.append(alias.name)
+    imports_str = ", ".join(sorted(set(imports)))
+
     class StackVisitor(ast.NodeVisitor):
         def __init__(self):
             self.class_stack = []
@@ -163,10 +178,32 @@ def parse_python_file(file_path: Path) -> List[Document]:
             "end_line": end,
             "is_method": len(class_stack) > 0,
             "dependencies": [],
+            "imports": imports_str,
+            "chunk_type": "function",
         }
         documents.append(Document(text=code, metadata=metadata))
 
     StackVisitor().visit(tree)
+
+    # Always create a module-level document so the file is never invisible
+    documents.append(
+        Document(
+            text=source,
+            metadata={
+                "file_path": str(file_path),
+                "module": module_name,
+                "function_name": "",
+                "qualified_name": module_name,
+                "class_name": "",
+                "start_line": 1,
+                "end_line": len(lines),
+                "is_method": False,
+                "dependencies": "",
+                "imports": imports_str,
+                "chunk_type": "module",
+            },
+        )
+    )
 
     if not documents:
         return documents
@@ -174,10 +211,18 @@ def parse_python_file(file_path: Path) -> List[Document]:
     definitions = {
         doc.metadata["function_name"].lower(): doc.metadata["qualified_name"]
         for doc in documents
+        if doc.metadata.get("chunk_type") == "function"
     }
-    qualified_names = {doc.metadata["qualified_name"] for doc in documents}
+    qualified_names = {
+        doc.metadata["qualified_name"]
+        for doc in documents
+        if doc.metadata.get("chunk_type") == "function"
+    }
 
     for doc in documents:
+        if doc.metadata.get("chunk_type") != "function":
+            continue
+
         dependency_names = set()
         try:
             func_tree = ast.parse(doc.text)
@@ -212,15 +257,53 @@ def parse_python_file(file_path: Path) -> List[Document]:
 
         # Always a string — never a list
         doc.metadata["dependencies"] = ", ".join(sorted(dependency_names))
-        
-    return documents;
+
+    return documents
+
+
+def parse_non_python_file(file_path: Path) -> List[Document]:
+    source = read_file(file_path)
+    if source is None:
+        return []
+
+    interesting = {
+        "readme.md", "readme.rst", "requirements.txt", "pyproject.toml",
+        "setup.py", "setup.cfg", "dockerfile", ".env.example", ".env.sample",
+        "docker-compose.yml", "docker-compose.yaml"
+    }
+
+    name_lower = file_path.name.lower()
+    if name_lower not in interesting and not name_lower.endswith((".toml", ".cfg", ".ini", ".yaml", ".yml")):
+        return []
+
+    return [
+        Document(
+            text=source,
+            metadata={
+                "file_path": str(file_path),
+                "module": file_path.stem,
+                "function_name": "",
+                "qualified_name": file_path.name,
+                "class_name": "",
+                "start_line": 1,
+                "end_line": source.count("\n") + 1,
+                "is_method": False,
+                "dependencies": "",
+                "imports": "",
+                "chunk_type": "documentation" if "readme" in name_lower else "config",
+            },
+        )
+    ]
+
 
 def parse_repository(files: List[Path]) -> List[Document]:
     all_documents = []
     for file in files:
-        all_documents.extend(parse_python_file(file))
+        if file.suffix == ".py":
+            all_documents.extend(parse_python_file(file))
+        else:
+            all_documents.extend(parse_non_python_file(file))
     return all_documents
-
 
 def batch_iterator(items, batch_size):
     for i in range(0, len(items), batch_size):

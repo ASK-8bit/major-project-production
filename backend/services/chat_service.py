@@ -18,10 +18,12 @@ from services.llm_service import generate_answer
 from workers.query_worker_manager import query_worker
 from services.query_classifier import classify_query
 from services.analytical_pipeline import run_analytical_pipeline
-
+from agent import create_plan, PlanExecutor
 QUERY_WORKER = str(WORKER_DIR / "query_worker.py")
 QUERY_TIMEOUT_SECONDS = 60  # prevents subprocess hanging forever on a bad query
 
+from agent import create_plan, PlanExecutor
+import json
 
 class ChatService:
 
@@ -130,53 +132,42 @@ class ChatService:
             "content": prompt,
         }).execute()
 
-       # ── NEW: Classify query first ──────────────────────────────────
-        classifier_result = classify_query(prompt)
+        # ── AGENTIC PIPELINE ──────────────────────────────────────────────
+        plan = create_plan(prompt)
+        executor = PlanExecutor(session_id=session_id, user_query=prompt)
+        execution_result = executor.execute(plan)
 
-        if classifier_result.is_analytical:
-            # ── ANALYTICAL PIPELINE ────────────────────────────────────
-            print(f"[ChatService] Routing to analytical pipeline")
-            analytical_result = await run_analytical_pipeline(
-                prompt=prompt,
-                session_id=session_id,
-                classifier_result=classifier_result
-            )
-            answer_text = analytical_result["answer"]
-            chunks_data = []
-            chunks = []
+        chunks = []
+        chunks_data = []
 
+        if not execution_result["success"]:
+            answer_text = f"I encountered an error while processing your request:\n{execution_result['error']}"
+            source = "error"
         else:
-            # ── EXISTING RETRIEVAL PIPELINE (unchanged) ────────────────
-            print(f"[ChatService] Routing to retrieval pipeline")
-            try:
-                result = query_worker.query(
-                    prompt=prompt,
-                    session_id=session_id,
-                    top_k=top_k,
-                    timeout=QUERY_TIMEOUT_SECONDS,
-                )
-            except TimeoutError:
-                raise HTTPException(
-                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                    detail="Query timed out. Try again.",
-                )
+            step_outputs = execution_result["step_outputs"]
 
-            if result["status"] == "error":
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=result["error"],
-                )
+            # Prefer classic RAG output if it exists
+            if "step_1" in step_outputs and isinstance(step_outputs["step_1"], dict) and "answer" in step_outputs["step_1"]:
+                rag_result = step_outputs["step_1"]
+                answer_text = rag_result["answer"]
+                chunks_data = rag_result.get("chunks", [])
+                chunks = [ChunkResult(**c) for c in chunks_data]
+                source = "retrieval"
+            else:
+                # Analytical / tool result
+                last_output = list(step_outputs.values())[-1] if step_outputs else {}
+                if isinstance(last_output, dict):
+                    answer_text = json.dumps(last_output, indent=2)
+                else:
+                    answer_text = str(last_output)
+                source = "analytical"
 
-            chunks = [ChunkResult(**c) for c in result["chunks"]]
-            chunks_data = [c.model_dump() for c in chunks]
-            answer_text = generate_answer(question=prompt, chunks=chunks_data)
-
-        # ── SAVE ASSISTANT MESSAGE (shared by both paths) ──────────────
+        # ── SAVE ASSISTANT MESSAGE ────────────────────────────────────────
         assistant_content = json.dumps({
             "text": answer_text,
             "chunks": chunks_data,
             "citations": [],
-            "source": "analytical" if classifier_result.is_analytical else "retrieval"
+            "source": source
         })
 
         supabase.table("messages").insert({
@@ -191,7 +182,7 @@ class ChatService:
             chunks=chunks,
             answer=answer_text,
             citations=[],
-            source="analytical" if classifier_result.is_analytical else "retrieval"
+            source=source
         )
-
+    
 chat_service = ChatService()
