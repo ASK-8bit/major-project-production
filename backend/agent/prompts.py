@@ -54,7 +54,8 @@ Your job is to create a short, precise execution plan for the user query.
 
 ==================== CACHED FUNCTIONS ====================
 {function_list}
-
+==================== REPO SKELETON ====================
+{skeleton}
 ==================== STRICT RULES ====================
 
 - Output ONLY valid JSON. No markdown, no explanation, no asterisks.

@@ -23,7 +23,7 @@ QUERY_WORKER = str(WORKER_DIR / "query_worker.py")
 QUERY_TIMEOUT_SECONDS = 60  # prevents subprocess hanging forever on a bad query
 
 from agent import create_plan, PlanExecutor
-import json
+
 
 class ChatService:
 
@@ -133,8 +133,7 @@ class ChatService:
         }).execute()
 
         # ── AGENTIC PIPELINE ──────────────────────────────────────────────
-        # ── AGENTIC PIPELINE ──────────────────────────────────────────────
-        plan = create_plan(prompt)
+        plan = create_plan(prompt, session_id)
         executor = PlanExecutor(session_id=session_id, user_query=prompt)
         execution_result = executor.execute(plan)
 
@@ -214,7 +213,7 @@ class ChatService:
                         # Case 3: Analytical / sandbox result
             else:
                 if isinstance(last_output, dict):
-                    import json
+                    
                     analytical_context = json.dumps(last_output, indent=2)
 
                     final_prompt = f"""You are an expert Python codebase assistant.

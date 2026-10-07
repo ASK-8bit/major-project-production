@@ -4,6 +4,9 @@ import subprocess
 import sys
 import uuid
 from pathlib import Path
+import tempfile
+import shutil
+
 
 from fastapi import HTTPException, status
 
@@ -36,6 +39,63 @@ def read_progress(job_id: str) -> dict | None:
     except Exception:
         return None
 
+
+def clone_repo(repo_url: str, temp_dir: str = None) -> str:
+    """
+    Clone GitHub repo to temp directory.
+    Returns path to cloned repo.
+    """
+    import tempfile
+    import subprocess
+    
+    if temp_dir is None:
+        temp_dir = tempfile.mkdtemp(prefix="repo_clone_")
+    
+    try:
+        subprocess.run(
+            ["git", "clone", "--depth", "1", repo_url, temp_dir],
+            capture_output=True,
+            timeout=60,
+            check=True
+        )
+        return temp_dir
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to clone repo: {e.stderr.decode()}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Clone error: {str(e)}"
+        )
+
+
+def build_repo_skeleton(repo_path: str) -> dict:
+    """
+    Recursively walk repo, collect .py files + important metadata files.
+    Return flat list of relative paths.
+    """
+    structure = []
+    important_extensions = {'.py', '.txt', '.md', '.yml', '.yaml', '.toml', '.env', '.gitignore'}
+    
+    try:
+        for root, dirs, files in os.walk(repo_path):
+            # Skip common junk dirs
+            dirs[:] = [d for d in dirs if d not in {'.git', '__pycache__', '.venv', 'venv', 'node_modules', '.pytest_cache', 'dist', 'build', '.egg-info'}]
+            
+            for file in files:
+                if file.startswith('.') and file != '.gitignore':
+                    continue
+                _, ext = os.path.splitext(file)
+                if ext in important_extensions or file in {'setup.py', 'setup.cfg', 'Dockerfile', 'docker-compose.yml'}:
+                    full_path = os.path.join(root, file)
+                    rel_path = os.path.relpath(full_path, repo_path)
+                    structure.append(rel_path.replace('\\', '/'))  # normalize to forward slashes
+    except Exception as e:
+        print(f"Error building skeleton: {e}")
+    
+    return {"structure": sorted(structure)}
 
 def delete_progress(job_id: str):
     try:
@@ -84,6 +144,21 @@ class UploadService:
             "chunks_done": 0,
             "total_chunks": 0,
         }).execute()
+
+        # NEW: Generate and store repo skeleton
+        
+        # ✅ CORRECT - clone first, then build skeleton
+
+        cloned_path = clone_repo(repo_url)
+
+        try:
+            skeleton_data = build_repo_skeleton(cloned_path)  # ← pass cloned path
+            supabase.table("repo_skeletons").insert({
+                "session_id": session_id,
+                "skeleton": skeleton_data,
+            }).execute()
+        finally:
+            shutil.rmtree(cloned_path, ignore_errors=True)  # cleanup temp dir
 
         # Launch embedding_worker.py as a completely separate process
         # This avoids the supabase + sentence_transformers import deadlock on Windows
