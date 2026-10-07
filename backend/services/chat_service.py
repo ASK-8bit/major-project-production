@@ -133,34 +133,118 @@ class ChatService:
         }).execute()
 
         # ── AGENTIC PIPELINE ──────────────────────────────────────────────
+        # ── AGENTIC PIPELINE ──────────────────────────────────────────────
         plan = create_plan(prompt)
         executor = PlanExecutor(session_id=session_id, user_query=prompt)
         execution_result = executor.execute(plan)
 
         chunks = []
         chunks_data = []
+        source = "agent"
 
         if not execution_result["success"]:
             answer_text = f"I encountered an error while processing your request:\n{execution_result['error']}"
             source = "error"
         else:
             step_outputs = execution_result["step_outputs"]
+            last_step_id = list(step_outputs.keys())[-1] if step_outputs else None
+            last_output = step_outputs.get(last_step_id, {}) if last_step_id else {}
 
-            # Prefer classic RAG output if it exists
-            if "step_1" in step_outputs and isinstance(step_outputs["step_1"], dict) and "answer" in step_outputs["step_1"]:
-                rag_result = step_outputs["step_1"]
-                answer_text = rag_result["answer"]
-                chunks_data = rag_result.get("chunks", [])
-                chunks = [ChunkResult(**c) for c in chunks_data]
+            # Case 1: classic_rag_retrieve was used
+            if isinstance(last_output, dict) and "answer" in last_output:
+                answer_text = last_output["answer"]
+                chunks_data = last_output.get("chunks", [])
+                chunks = [ChunkResult(**c) for c in chunks_data] if chunks_data else []
                 source = "retrieval"
+
+            # Case 2: multi_query_retrieve was used → need final LLM
+            elif isinstance(last_output, dict) and "chunks" in last_output:
+                retrieved_chunks = last_output["chunks"]
+                chunks_data = retrieved_chunks
+                chunks = []   # or convert if you want
+
+                # Build a clean context for the LLM
+                context_parts = []
+                for i, chunk in enumerate(retrieved_chunks[:12], 1):  # limit to top 12
+                    meta = chunk.get("metadata", {})
+                    file_path = meta.get("file_path", "unknown")
+                    func_name = meta.get("qualified_name") or meta.get("function_name", "")
+                    text = chunk.get("text", "")
+                    context_parts.append(
+                        f"[{i}] File: {file_path} | Function: {func_name}\n{text}"
+                    )
+
+                context = "\n\n".join(context_parts)
+
+                final_prompt = f"""You are an expert Python codebase assistant. Your job is to give a clear, accurate, and well-structured answer based only on the provided code context.
+
+                User Question:
+                {prompt}
+
+                Code Context:
+                {context}
+
+                Guidelines for your answer:
+
+                1. Base your answer strictly on the code context above. Do not invent functions, files, or behavior that are not present.
+                2. If the question is about understanding a flow or process (e.g. validation → processing → storage), structure your answer in clear stages and mention the relevant functions and files for each stage.
+                3. If the question is about explaining a specific function or concept, explain what it does, how it works, and its key interactions.
+                4. If the question is about impact or dependencies, list the affected functions and files and briefly explain why they are affected.
+                5. Always mention the file paths and function names when referring to code.
+                6. If important parts are missing from the context, clearly state what is missing instead of guessing.
+                7. Keep the answer well-organized, use bullet points or numbered steps when helpful, and write in clear plain English.
+                8. Be precise and avoid unnecessary repetition.
+
+                Now provide the best possible answer to the user question.
+                """
+
+                # Reuse your existing generate_answer or call Gemini directly
+                from services.llm_service import generate_answer   # adjust import if needed
+
+                # If your generate_answer only accepts (question, chunks), you can do:
+                answer_text = generate_answer(
+                    question=final_prompt,
+                    chunks=[{"text": context, "metadata": {}}]
+                )
+
+                # OR if you prefer a direct call, use your Gemini client here.
+                source = "multi_query"
+
+            # Case 3: Analytical / sandbox result
+                        # Case 3: Analytical / sandbox result
             else:
-                # Analytical / tool result
-                last_output = list(step_outputs.values())[-1] if step_outputs else {}
                 if isinstance(last_output, dict):
-                    answer_text = json.dumps(last_output, indent=2)
+                    import json
+                    analytical_context = json.dumps(last_output, indent=2)
+
+                    final_prompt = f"""You are an expert Python codebase assistant.
+
+                        User Question:
+                        {prompt}
+
+                        Analytical Result (from code analysis):
+                        {analytical_context}
+
+                        Instructions:
+                        - Explain the result clearly in plain English.
+                        - Structure the answer nicely (use bullet points or a table when helpful).
+                        - Mention function names, arguments, classes, etc. in a readable way.
+                        - If the result contains an error, explain what went wrong.
+                        - Do not just dump the raw JSON — turn it into a helpful explanation.
+                        - Be concise but complete.
+                        """
+
+                    from services.llm_service import generate_answer   # keep the same import you already use
+
+                    answer_text = generate_answer(
+                        question=final_prompt,
+                        chunks=[{"text": analytical_context, "metadata": {}}]
+                    )
+                    source = "analytical"
                 else:
                     answer_text = str(last_output)
-                source = "analytical"
+                    source = "analytical"
+
 
         # ── SAVE ASSISTANT MESSAGE ────────────────────────────────────────
         assistant_content = json.dumps({

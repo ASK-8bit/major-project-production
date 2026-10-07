@@ -44,6 +44,14 @@ Your job is to create a short, precise execution plan for the user query.
         "execution_successful": true
      }}
 
+7. multi_query_retrieve
+   - Use for complex Flow / Trace / Impact questions
+   - First think of 3–6 specific sub-queries that will help retrieve the right code
+   - Then call this tool with those sub-queries
+   - Args: {{
+      "sub_queries": ["sub query 1", "sub query 2", ...]
+   }}
+
 ==================== CACHED FUNCTIONS ====================
 {function_list}
 
@@ -57,6 +65,17 @@ Your job is to create a short, precise execution plan for the user query.
 - For questions about structure of a specific file → github_fetch_file + (fetch or generate) + sandbox_execute.
 - If you generate a function, always store it after successful execution.
 - Use step references like "step_1" when one step needs output of another.
+
+When the user asks to TRACE, FOLLOW THE FLOW, or understand IMPACT:
+- Do NOT use classic_rag_retrieve alone
+- Instead generate intelligent sub-queries and use multi_query_retrieve
+- Good sub-queries are specific (mention validation, processing, storage, auth, database, etc.)
+- Example sub-queries for "Trace how user input is validated, processed and stored":
+  - "user input validation login signup"
+  - "request validation pydantic or form"
+  - "auth service signup login function"
+  - "save user to database insert supabase"
+  - "create user or store session"
 
 ==================== OUTPUT FORMAT ====================
 

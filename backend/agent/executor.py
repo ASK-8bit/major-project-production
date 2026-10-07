@@ -51,7 +51,7 @@ class PlanExecutor:
                 return ToolResult(success=False, error="No repo_url found for this session")
             resolved_args["repo_url"] = self.repo_url
 
-        if tool_name == "classic_rag_retrieve":
+        if tool_name in ("classic_rag_retrieve", "multi_query_retrieve"):
             resolved_args["session_id"] = self.session_id
 
         if tool_name == "generate_analytical_function":

@@ -4,6 +4,13 @@ import re
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+import os
+from typing import List
+import chromadb
+from chromadb.config import Settings
+
+from agent.schemas import ToolResult
+
 from core.config import supabase
 from services.github_fetcher import fetch_file
 from services.sandbox_executor import execute_function
@@ -15,6 +22,81 @@ from services.analytical_pipeline import (
     _derive_function_name,
     _clean_generated_code,
 )
+
+
+def multi_query_retrieve(
+    sub_queries: List[str],
+    session_id: str,
+    top_k_per_query: int = 6
+) -> ToolResult:
+    """
+    Run multiple semantic searches against the session's Chroma collection
+    and return merged + deduplicated chunks.
+    """
+    try:
+        if not sub_queries:
+            return ToolResult(success=False, error="No sub_queries provided")
+
+        client = chromadb.CloudClient(
+            api_key=os.getenv("CHROMA_API_KEY"),
+            tenant=os.getenv("CHROMA_TENANT"),
+            database=os.getenv("CHROMA_DATABASE"),
+        )
+
+        try:
+            collection = client.get_collection(name=session_id)
+        except Exception as e:
+            return ToolResult(
+                success=False,
+                error=f"Could not get Chroma collection for session {session_id}: {e}"
+            )
+
+        seen_ids = set()
+        merged_chunks = []
+
+        for query in sub_queries:
+            try:
+                results = collection.query(
+                    query_texts=[query],
+                    n_results=top_k_per_query,
+                    include=["documents", "metadatas", "distances"]
+                )
+
+                documents = results.get("documents", [[]])[0]
+                metadatas = results.get("metadatas", [[]])[0]
+                distances = results.get("distances", [[]])[0]
+                ids = results.get("ids", [[]])[0]
+
+                for doc, meta, dist, doc_id in zip(documents, metadatas, distances, ids):
+                    if doc_id in seen_ids:
+                        continue
+                    seen_ids.add(doc_id)
+
+                    merged_chunks.append({
+                        "id": doc_id,
+                        "text": doc,
+                        "metadata": meta or {},
+                        "distance": dist
+                    })
+
+            except Exception as e:
+                print(f"[multi_query_retrieve] Error on sub-query '{query}': {e}")
+                continue
+
+        # Sort by distance (lower = better)
+        merged_chunks.sort(key=lambda x: x.get("distance", 999))
+
+        return ToolResult(
+            success=True,
+            data={
+                "chunks": merged_chunks,
+                "sub_queries_used": sub_queries,
+                "total_chunks": len(merged_chunks)
+            }
+        )
+
+    except Exception as e:
+        return ToolResult(success=False, error=str(e))
 
 
 def classic_rag_retrieve(query: str, session_id: str, top_k: int = 8) -> ToolResult:
@@ -156,4 +238,5 @@ TOOL_REGISTRY = {
     "generate_analytical_function": generate_analytical_function,
     "sandbox_execute": sandbox_execute,
     "supabase_store_function": supabase_store_function,
+    "multi_query_retrieve": multi_query_retrieve,
 }
